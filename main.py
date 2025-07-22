@@ -69,7 +69,7 @@ BEST PRACTICES & RULES:
 """
 
 
-# Expanded few-shot examples with RoAS to handle the reported issue
+# Few-shot examples with RoAS to handle the reported issue
 FEW_SHOT_EXAMPLES = [
     {"user": "What is my total sales?", "sql": "SELECT SUM(ts.total_sales) AS total_sales FROM total_sales ts;"},
     {"user": "Which product had the highest CPC (Cost Per Click)?", "sql": "SELECT ads.item_id, (SUM(ads.ad_spend) / NULLIF(SUM(ads.clicks), 0)) AS cpc FROM ad_sales ads GROUP BY ads.item_id ORDER BY cpc DESC LIMIT 1;"},
@@ -114,12 +114,12 @@ def generate_sql(system_prompt: str, user_content: str) -> str:
         )
         sql_output = response["choices"][0]["message"]["content"].strip()
         
-        # Improved regex to aggressively extract SELECT statement, ignoring leading text
+        # Regex to aggressively extract SELECT statement, ignoring leading text
         match = re.search(r'(SELECT\s+.*?);?\s*$', sql_output, re.IGNORECASE | re.DOTALL | re.MULTILINE)
         if match:
             return match.group(1)
         
-        # Fallback: Strip common prefixes like "The" or explanations
+        
         cleaned_output = re.sub(r'^[^S]*SELECT', 'SELECT', sql_output, flags=re.IGNORECASE)
         match_fallback = re.search(r'(SELECT\s+.*?);?\s*$', cleaned_output, re.IGNORECASE | re.DOTALL)
         return match_fallback.group(1) if match_fallback else sql_output
