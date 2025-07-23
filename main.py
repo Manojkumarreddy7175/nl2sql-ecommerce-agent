@@ -243,4 +243,3 @@ def generate_chart(result: List[Dict], columns: List[str], question: str) -> str
     except Exception as e:
         logging.error(f"Chart generation error: {str(e)}")
         return None
-
