@@ -1,135 +1,121 @@
-# NL2SQL E-Commerce Agent
+# NL2SQL E-Commerce AI Agent
 
-A FastAPI-powered backend that translates natural language questions into safe, optimized SQL queries for e-commerce analytics. It leverages a local [Ollama Mistral](https://ollama.com/library/mistral) large language model via the OpenAI-compatible API, and visualizes results with summaries and charts.
+Hey everyone! I'm Manoj Kumar Reddy, a passionate coder who spends a lot of time solving algorithmic puzzles on LeetCode and optimizing Java code for efficiency. This project is my take on building an AI agent that turns natural language questions into SQL queries for e-commerce data analysis. I evaluated options like a custom Mistral setup via Ollama against RAG-based approaches (e.g., Vanna AI) and stuck with the custom one for its local, lightweight performance and full control. The agent queries datasets on ad sales, total sales, and eligibility, providing meaningful English summaries and actionable insights.
 
----
+## Project Overview
+This FastAPI application serves as an intelligent backend for e-commerce data querying. It uses a local LLM (Mistral via Ollama) to generate optimized SQLite SELECT queries from natural language inputs. No cloud dependencies—everything runs locally. I focused on making summaries readable and natural (e.g., "The total items are 264."), drawing from my experience in crafting efficient algorithms to ensure quick responses.
+
+Key datasets:
+- **Ad Sales**: Tracks ad_sales, impressions, ad_spend, clicks, etc.
+- **Total Sales**: Covers total_sales and units_ordered.
+- **Eligibility**: Includes eligibility status and messages.
+
+It handles metrics like RoAS and CPC with built-in business logic.
 
 ## Features
-
-- **Natural Language to SQL**: Converts user questions into secure, valid SQLite `SELECT` queries.
-- **LLM Integration**: Uses Ollama Mistral (OpenAI API compatible) for query generation.
-- **Strict SQL Safety**: Only allows `SELECT` statements, with schema and business-rule awareness.
-- **Session Memory**: Maintains limited conversation history for each user session.
-- **Result Summaries**: Provides clear, human-readable insights for query results.
-- **Chart Generation**: Automatically creates bar charts (as base64 images) for suitable results.
-
----
+- **NL2SQL Conversion**: Translates questions like "Count of total items" into safe, optimized SQL.
+- **Meaningful Summaries**: Generates natural English responses (e.g., "The total sales are 1234.56.") for console output.
+- **Chart Generation**: Creates bar charts for multi-row results (base64-encoded in responses).
+- **Conversation Memory**: Retains context for follow-up questions (limited to 3 entries for efficiency).
+- **Validation & Security**: Ensures only SELECT queries, prevents division by zero, and sanitizes outputs.
+- **Performance Optimizations**: Prompt caching, regex extraction, and history limiting for fast processing.
+- **Server-Side Console Output**: Prints human-readable answers directly in CMD for easy debugging.
 
 ## Architecture
-
-![NL2SQL Architecture](docs/nl2sql-architecture.gif)
-
-
+Here's a visual represntation of the system's architecture, grouped by components (User, API, Ollama).
 
 ![AI-ecommerce -agent architecure ](https://github.com/user-attachments/assets/f6b95947-75e8-4e48-a4dd-3f3c7ce73a4b)
 
+### User Processes
+1. Formulate and send query via POST to /ask.
+2. Receive JSON response and view results.
 
-<sup><em>If the GIF does not display, ensure you have a file at `docs/nl2sql-architecture.gif` or replace the path with your actual GIF location.</em></sup>
+### API Processes (FastAPI Backend)
+1. Validate request.
+2. Build prompt with schema, examples, and history.
+3. Generate SQL via Ollama.
+4. Validate and execute SQL on SQLite DB.
+5. Process results (summary, chart).
+6. Update memory and print to console.
+7. Return JSON.
 
----
+### Ollama Processes (Local LLM)
+1. Receive prompt from API.
+2. Generate SQL response.
+3. Return to API for processing.
 
-## Database Schema
+Full flow: User → FastAPI (prompt build → Ollama → DB query → processing) → Response back to User + Console Print.
 
-Predefined tables in `ecommerce.db`:
+## Installation
+1. **Clone the Repo**:
+git clone https://github.com/Manojkumarreddy7175/nl2sql-ecommerce-agent.git
+cd nl2sql-ecommerce-agent
 
-- **ad_sales**  
-  `date TEXT (YYYY-MM-DD)`, `item_id INT`, `ad_sales FLOAT`, `impressions INT`, `ad_spend FLOAT`, `clicks INT`, `units_sold INT`
-- **total_sales**  
-  `date TEXT (YYYY-MM-DD)`, `item_id INT`, `total_sales FLOAT`, `total_units_ordered INT`
-- **eligibility**  
-  `eligibility_datetime_utc TEXT`, `item_id INT`, `eligibility INT`, `message TEXT`
+text
 
-**Business Metrics Supported:**
-- RoAS (Return on Ad Spend): `SUM(ad_sales) / NULLIF(SUM(ad_spend), 0)`
-- CPC (Cost Per Click): `SUM(ad_spend) / NULLIF(SUM(clicks), 0)`
+2. **Install Dependencies**:
 
----
+pip install  FastAPI, Uvicorn, OpenAI, Pandas, Matplotlib
 
-## Getting Started
+3. **Set Up Ollama**:
+- Install from [ollama.ai](https://ollama.ai).
+- Pull Mistral: `ollama pull mistral`.
+- Run Ollama server.
 
-### Prerequisites
+4. **Database**:
+- Use the included `ecommerce.db` or create one matching the schema.
+- (Optional) Populate with your CSV data.
 
-- Python 3.7+
-- [Ollama](https://ollama.com/) (with [Mistral model](https://ollama.com/library/mistral) running locally)
-- `ecommerce.db` SQLite database with the schema above
+## Usage
+1. **Start the Server**:
 
-### Install Dependencies
-
-```bash
-pip install fastapi openai matplotlib pandas uvicorn
-```
-
-### Start Ollama (Mistral)
-
-```bash
-ollama run mistral
-```
-
-### Run the FastAPI Server
-
-```bash
 uvicorn main:app --reload
-```
 
-The server will be available at:  
-`http://localhost:8000`
+text
+- Runs on `http://localhost:8000`.
 
----
+2. **Query the API**:
 
-## API Usage
+curl -X POST http://localhost:8000/ask -H "Content-Type: application/json" -d '{"question": "Count of total items", "session_id": "default"}'
 
-### POST `/ask`
+text
 
-**Request Body:**
-```json
-{
-  "question": "Which product had the highest CPC?",
-  "session_id": "user123"
-}
-```
+- JSON Response Example:
+  ```
+  {
+    "question": "Count of total items",
+    "sql": "SELECT COUNT(DISTINCT ads.item_id) AS total_items FROM ad_sales ads",
+    "result": [{"total_items": 264}],
+    "summary": "The total items are 264.",
+    "chart_base64": null,
+    "message": "Success"
+  }
+  ```
 
-**Response Example:**
-```json
-{
-  "question": "...",
-  "sql": "...",
-  "result": [...],
-  "summary": "...",
-  "chart_base64": "...",
-  "message": "Success"
-}
-```
+- Console Output (Server CMD):
+  ```
+  Question: Count of total items
+  SQL Query: SELECT COUNT(DISTINCT ads.item_id) AS total_items FROM ad_sales ads
+  Summary: The total items are 264.
+  Message: Success
+  ```
 
-- `chart_base64` is a PNG image encoded as a base64 string (for two-column results).
+## Examples
+- **Input**: "What is my total sales?"
+- Summary: "The total sales are 1234.56."
+- **Input**: "Calculate the RoAS (Return on Ad Spend)."
+- Summary: "The roas is 7.92."
+- **Input**: "Top 3 items by ad spend."
+- Summary: "Top 5 results: 123: 500.00, 456: 450.00, 789: 400.00" (with chart if applicable).
 
----
+## How It Works
+- **Prompt Engineering**: Combines schema, rules, and examples for accurate SQL generation.
+- **SQL Processing**: Validates, executes on SQLite, and formats results into natural language.
 
-## Customization
+- **Why This Tech?**: Local Mistral for privacy/speed; FastAPI for lightweight API; no RAG to keep it simple and custom.
 
-- **LLM Configuration**: Adjust `openai.api_base` and `openai.api_key` as needed for your Ollama instance.
-- **Schema Extension**: Update the prompt and database schema in `main.py` to add new tables or metrics.
 
----
 
-## Security Notes
 
-- Only SELECT queries are generated and executed.
-- All LLM outputs are filtered and validated before execution.
-- Conversation memory is session-specific and non-persistent.
 
----
-
-## License
-
-MIT License
-
----
-
-## Acknowledgments
-
-- [Ollama](https://ollama.com/) for local LLM hosting.
-- [FastAPI](https://fastapi.tiangolo.com/) for API framework.
-
----
-
-<sup>For questions or contributions, please open an issue or pull request.</sup>![Uploading image.png…]()
+– Manoj Kumar Reddy
