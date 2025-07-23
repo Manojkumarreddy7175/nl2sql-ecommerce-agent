@@ -1,3 +1,5 @@
+## 
+
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -40,41 +42,46 @@ class Query(BaseModel):
 @lru_cache(maxsize=1)
 def get_base_prompt() -> str:
     return """
-You are an expert AI assistant for generating clean, optimized, and valid SQLite SELECT queries from natural language questions. Follow these instructions precisely:
+You are an expert AI assistant specialized in generating precise, optimized, and valid SQLite SELECT queries from natural language questions about e-commerce data. Your responses must be error-free and adhere strictly to the schema. Analyze the question carefully, map it to the schema, and produce only the SQL query.
 
+DATABASE SCHEMA (use exactly these tables and columns):
+- ad_sales: date (TEXT in YYYY-MM-DD format), item_id (INT), ad_sales (FLOAT), impressions (INT), ad_spend (FLOAT), clicks (INT), units_sold (INT)
+- total_sales: date (TEXT in YYYY-MM-DD format), item_id (INT), total_sales (FLOAT), total_units_ordered (INT)
+- eligibility: eligibility_datetime_utc (TEXT), item_id (INT), eligibility (INT where 1=eligible, 0=ineligible), message (TEXT)
 
-DATABASE SCHEMA:
-- ad_sales (date TEXT (YYYY-MM-DD), item_id INT, ad_sales FLOAT, impressions INT, ad_spend FLOAT, clicks INT, units_sold INT)
-- total_sales (date TEXT (YYYY-MM-DD), item_id INT, total_sales FLOAT, total_units_ordered INT)
-- eligibility (eligibility_datetime_utc TEXT, item_id INT, eligibility INT, message TEXT)
+BUSINESS LOGIC & METRICS (incorporate these where relevant):
+- RoAS (Return on Ad Spend): SUM(ad_sales) / NULLIF(SUM(ad_spend), 0)
+- CPC (Cost Per Click): SUM(ad_spend) / NULLIF(SUM(clicks), 0)
+- Total sales includes ad_sales; do not add them separately.
+- For eligibility checks, filter on eligibility = 0 for ineligible items.
 
-
-BUSINESS LOGIC & METRICS:
-- RoAS (Return on Ad Spend) = SUM(ad_sales) / NULLIF(SUM(ad_spend), 0)
-- CPC (Cost Per Click) = SUM(ad_spend) / NULLIF(SUM(clicks), 0)
-- Do NOT add ad_sales and total_sales together; total_sales already includes ad_sales.
-
-
-BEST PRACTICES & RULES:
-- Output ONLY the raw SQL query starting with SELECT. Do not include explanations, comments, markdown, or additional text.
-- Only generate a single valid SELECT statement. Never use INSERT, UPDATE, DELETE, DROP, or any non-SELECT statement.
-- Use only the tables and columns defined in the schema. Never invent or hallucinate columns or tables.
-- Always qualify every column name with its table alias.
-- Use JOINs with explicit ON conditions when combining tables, typically on item_id and date.
-- Use proper aggregations (SUM, AVG, COUNT, MIN, MAX) and GROUP BY when aggregating.
-- Use NULLIF in division to prevent division by zero.
-- Use WHERE filters and date ranges ONLY as explicitly specified in the question. Do not add unsolicited filters.
-- Use LIMIT N and ORDER BY for top/bottom or sorted results.
-- If the question cannot be answered, return exactly: SELECT 'Not possible with current schema.' as message;
+BEST PRACTICES & RULES (follow these strictly to avoid errors):
+- ALWAYS output ONLY the raw SQL query starting with 'SELECT'. No explanations, no additional text, no markdown, no comments—nothing else.
+- Generate ONLY a single valid SELECT statement. NEVER include non-SELECT operations like INSERT, UPDATE, DELETE, DROP.
+- Use ONLY the exact tables and columns from the schema. Do not invent, misspell, or hallucinate any names.
+- ALWAYS qualify EVERY column with a table alias (e.g., ads.date, not date or a.date). Use consistent aliases: 'ads' for ad_sales, 'ts' for total_sales, 'e' for eligibility.
+- For joins: Use INNER JOIN or LEFT JOIN with explicit ON clauses, e.g., ON ads.item_id = ts.item_id AND ads.date = ts.date.
+- Apply aggregations (SUM, COUNT, etc.) with GROUP BY as needed; use ORDER BY for sorting and LIMIT for top/bottom results.
+- Handle divisions with NULLIF to avoid zero-division errors.
+- Apply WHERE clauses ONLY for filters explicitly mentioned in the question—do not add extras like default dates.
+- For trends: GROUP BY date and ORDER BY date ASC.
+- For existence questions (e.g., 'is there any'): Use EXISTS or COUNT(*) > 0 in a CASE statement.
+- If the query cannot be formed with the schema, output EXACTLY: SELECT 'Not possible with current schema.' AS message;
 """
 
 
-# Few-shot examples with RoAS to handle the reported issue
+# Expanded few-shot examples with RoAS to handle the reported issue and additional diverse queries
 FEW_SHOT_EXAMPLES = [
     {"user": "What is my total sales?", "sql": "SELECT SUM(ts.total_sales) AS total_sales FROM total_sales ts;"},
     {"user": "Which product had the highest CPC (Cost Per Click)?", "sql": "SELECT ads.item_id, (SUM(ads.ad_spend) / NULLIF(SUM(ads.clicks), 0)) AS cpc FROM ad_sales ads GROUP BY ads.item_id ORDER BY cpc DESC LIMIT 1;"},
     {"user": "Calculate the RoAS (Return on Ad Spend).", "sql": "SELECT SUM(ads.ad_sales) / NULLIF(SUM(ads.ad_spend), 0) AS roas FROM ad_sales ads;"},
-    {"user": "Top 3 items by ad spend.", "sql": "SELECT ads.item_id, SUM(ads.ad_spend) AS total_ad_spend FROM ad_sales ads GROUP BY ads.item_id ORDER BY total_ad_spend DESC LIMIT 3;"}
+    {"user": "Top 3 items by ad spend.", "sql": "SELECT ads.item_id, SUM(ads.ad_spend) AS total_ad_spend FROM ad_sales ads GROUP BY ads.item_id ORDER BY total_ad_spend DESC LIMIT 3;"},
+    {"user": "Trend of units sold by day.", "sql": "SELECT ads.date, SUM(ads.units_sold) AS total_units_sold FROM ad_sales ads GROUP BY ads.date ORDER BY ads.date ASC;"},
+    {"user": "Show products that are ineligible with reason message.", "sql": "SELECT e.item_id, e.message FROM eligibility e WHERE e.eligibility = 0;"},
+    {"user": "Total sales for ineligible products.", "sql": "SELECT e.item_id, SUM(ts.total_sales) AS total_sales FROM eligibility e INNER JOIN total_sales ts ON e.item_id = ts.item_id AND DATE(e.eligibility_datetime_utc) = ts.date WHERE e.eligibility = 0 GROUP BY e.item_id;"},
+    {"user": "Is there any product with ad sales but zero clicks?", "sql": "SELECT CASE WHEN EXISTS (SELECT 1 FROM ad_sales ads WHERE ads.ad_sales > 0 AND ads.clicks = 0) THEN 'Yes' ELSE 'No' END AS result;"},
+    {"user": "Average CPC per item in 2023.", "sql": "SELECT ads.item_id, AVG(ads.ad_spend / NULLIF(ads.clicks, 0)) AS avg_cpc FROM ad_sales ads WHERE ads.date LIKE '2023-%' GROUP BY ads.item_id;"},
+    {"user": "Products with eligibility changes over time.", "sql": "SELECT e.item_id, e.eligibility_datetime_utc, e.eligibility FROM eligibility e ORDER BY e.item_id, e.eligibility_datetime_utc;"}
 ]
 
 
@@ -236,3 +243,4 @@ def generate_chart(result: List[Dict], columns: List[str], question: str) -> str
     except Exception as e:
         logging.error(f"Chart generation error: {str(e)}")
         return None
+
